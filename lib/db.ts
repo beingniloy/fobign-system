@@ -1226,7 +1226,7 @@ class DatabaseStore {
   }
 
   getAnnouncement(): AnnouncementSettings {
-    this.loadFromDisk();
+    this.loadFromDisk(true);
     return this.announcementSettings;
   }
 
