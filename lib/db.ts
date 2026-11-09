@@ -935,10 +935,12 @@ class DatabaseStore {
 
   // Models
   getAllModels(): ModelDefinition[] {
+    this.loadFromDisk();
     return Array.from(this.models.values());
   }
 
   getModel(id: string): ModelDefinition | undefined {
+    this.loadFromDisk();
     return this.models.get(id);
   }
 
