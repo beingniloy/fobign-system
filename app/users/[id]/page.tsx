@@ -23,6 +23,10 @@ import {
   Minus,
   Gift,
   Wallet,
+  Eye,
+  EyeOff,
+  Mail,
+  Send,
 } from 'lucide-react';
 import BoringAvatar from '@/components/ui/BoringAvatar';
 import ActivityStreak from '@/components/shared/ActivityStreak';
@@ -59,6 +63,12 @@ export default function UserDetailPage({ params }: UserDetailPageProps) {
   const [status, setStatus] = useState('active');
   const [balance, setBalance] = useState('0');
   const [currency, setCurrency] = useState<'USD' | 'BDT'>('USD');
+
+  // Password & Reset states
+  const [newPassword, setNewPassword] = useState('');
+  const [showPassword, setShowPassword] = useState(false);
+  const [updatingPassword, setUpdatingPassword] = useState(false);
+  const [sendingReset, setSendingReset] = useState(false);
 
   useEffect(() => {
     async function loadUser() {
@@ -159,6 +169,64 @@ export default function UserDetailPage({ params }: UserDetailPageProps) {
       setFeedback('Error: ' + err.message);
     } finally {
       setAdjusting(false);
+    }
+  };
+
+  const handleChangePassword = async () => {
+    if (!newPassword || newPassword.length < 6) {
+      setFeedback('Password must be at least 6 characters.');
+      return;
+    }
+    setUpdatingPassword(true);
+    setFeedback(null);
+    try {
+      const res = await fetch('/api/system/users', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({
+          userId,
+          action: 'change_password',
+          new_password: newPassword,
+        }),
+      });
+      const data = await res.json();
+      if (res.ok && data.success) {
+        setNewPassword('');
+        setFeedback(data.message || 'Password updated successfully.');
+        setTimeout(() => setFeedback(null), 4000);
+      } else {
+        setFeedback(data.error || 'Failed to update password.');
+      }
+    } catch (err: any) {
+      setFeedback('Error: ' + err.message);
+    } finally {
+      setUpdatingPassword(false);
+    }
+  };
+
+  const handleSendPasswordReset = async () => {
+    setSendingReset(true);
+    setFeedback(null);
+    try {
+      const res = await fetch('/api/system/users', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({
+          userId,
+          action: 'send_password_reset',
+        }),
+      });
+      const data = await res.json();
+      if (res.ok && data.success) {
+        setFeedback(data.message || `Password reset email dispatched to ${email}.`);
+        setTimeout(() => setFeedback(null), 5000);
+      } else {
+        setFeedback(data.error || 'Failed to send password reset email.');
+      }
+    } catch (err: any) {
+      setFeedback('Error: ' + err.message);
+    } finally {
+      setSendingReset(false);
     }
   };
 
@@ -305,16 +373,16 @@ export default function UserDetailPage({ params }: UserDetailPageProps) {
 
             <div className="grid grid-cols-2 gap-3">
               <div>
-                <label className="block text-[#80858e] font-medium mb-1">Role</label>
+                <label className="block text-[#80858e] font-medium mb-1">Developer Role</label>
                 <select
-                  value={role}
+                  value={role === 'admin' || role === 'administrator' ? 'developer' : role}
                   onChange={(e) => setRole(e.target.value)}
                   className="w-full bg-[#101113] border border-[#2B2B2F] rounded-xl px-3.5 py-2 text-white focus:outline-none focus:border-white/50 cursor-pointer"
                 >
-                  <option value="developer">Developer</option>
-                  <option value="admin">Administrator</option>
-                  <option value="finance">Finance Manager</option>
-                  <option value="auditor">Auditor</option>
+                  <option value="developer">Developer (Standard)</option>
+                  <option value="enterprise">Enterprise Tier</option>
+                  <option value="team_member">Team Member</option>
+                  <option value="viewer">Read-Only Viewer</option>
                 </select>
               </div>
 
@@ -343,6 +411,62 @@ export default function UserDetailPage({ params }: UserDetailPageProps) {
                 <option value="USD">USD ($)</option>
                 <option value="BDT">BDT (৳)</option>
               </select>
+            </div>
+
+            {/* Password Credentials & Reset */}
+            <div className="pt-3 border-t border-[#252528] space-y-3">
+              <div>
+                <label className="block text-[#80858e] font-medium mb-1">Set New Password</label>
+                <div className="flex gap-2">
+                  <div className="relative flex-1">
+                    <input
+                      type={showPassword ? 'text' : 'password'}
+                      value={newPassword}
+                      onChange={(e) => setNewPassword(e.target.value)}
+                      placeholder="Enter new password (min. 6 chars)"
+                      className="w-full bg-[#101113] border border-[#2B2B2F] rounded-xl px-3.5 py-2 text-white font-mono text-xs focus:outline-none focus:border-white/50 pr-8"
+                    />
+                    <button
+                      type="button"
+                      onClick={() => setShowPassword(!showPassword)}
+                      className="absolute right-2.5 top-2.5 text-[#80858e] hover:text-white cursor-pointer"
+                    >
+                      {showPassword ? <EyeOff className="w-3.5 h-3.5" /> : <Eye className="w-3.5 h-3.5" />}
+                    </button>
+                  </div>
+                  <button
+                    type="button"
+                    onClick={handleChangePassword}
+                    disabled={updatingPassword || !newPassword || newPassword.length < 6}
+                    className="px-3.5 py-2 rounded-xl bg-[#252528] hover:bg-[#303035] text-white text-xs font-semibold flex items-center gap-1.5 transition-colors disabled:opacity-40 cursor-pointer shrink-0"
+                  >
+                    {updatingPassword ? <Loader2 className="w-3.5 h-3.5 animate-spin" /> : <Key className="w-3.5 h-3.5" />}
+                    <span>Update Password</span>
+                  </button>
+                </div>
+              </div>
+
+              {/* Password Reset Email Button */}
+              <div className="p-3 rounded-xl bg-[#101113] border border-[#252528] flex flex-col sm:flex-row sm:items-center justify-between gap-3">
+                <div className="space-y-0.5">
+                  <div className="text-white font-semibold text-xs flex items-center gap-1.5">
+                    <Mail className="w-3.5 h-3.5 text-[#80858e]" />
+                    <span>Send Password Reset Link</span>
+                  </div>
+                  <div className="text-[10px] text-[#80858e]">
+                    Dispatches a secure password reset link to <span className="font-mono text-neutral-300">{email}</span>
+                  </div>
+                </div>
+                <button
+                  type="button"
+                  onClick={handleSendPasswordReset}
+                  disabled={sendingReset}
+                  className="px-3 py-1.5 rounded-lg bg-white/10 hover:bg-white/20 text-white text-xs font-semibold flex items-center justify-center gap-1.5 transition-colors disabled:opacity-50 cursor-pointer shrink-0"
+                >
+                  {sendingReset ? <Loader2 className="w-3.5 h-3.5 animate-spin" /> : <Send className="w-3.5 h-3.5" />}
+                  <span>{sendingReset ? 'Sending...' : 'Send Reset Email'}</span>
+                </button>
+              </div>
             </div>
           </div>
         </form>

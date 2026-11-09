@@ -18,6 +18,11 @@ import {
   Check,
   MoreVertical,
   Eye,
+  Plus,
+  UserPlus,
+  Loader2,
+  Key,
+  Mail,
 } from 'lucide-react';
 import BoringAvatar from '@/components/ui/BoringAvatar';
 import { User as UserType } from '@/lib/types';
@@ -60,6 +65,17 @@ export default function UsersManagementPage() {
   const [logsModalUser, setLogsModalUser] = useState<UserType | null>(null);
   const [commLogs, setCommLogs] = useState<DecryptedCommLog[]>([]);
   const [logsLoading, setLogsLoading] = useState(false);
+
+  // Add User Modal State
+  const [showAddModal, setShowAddModal] = useState(false);
+  const [newUserName, setNewUserName] = useState('');
+  const [newUserEmail, setNewUserEmail] = useState('');
+  const [newUserPassword, setNewUserPassword] = useState('');
+  const [newUserBalance, setNewUserBalance] = useState('0.00');
+  const [newUserCurrency, setNewUserCurrency] = useState<'USD' | 'BDT'>('USD');
+  const [newUserRole, setNewUserRole] = useState('developer');
+  const [newUserStatus, setNewUserStatus] = useState('active');
+  const [creatingUser, setCreatingUser] = useState(false);
 
   const [feedback, setFeedback] = useState<string | null>(null);
 
@@ -194,6 +210,49 @@ export default function UsersManagementPage() {
     }
   };
 
+  const handleCreateUser = async (e: React.FormEvent) => {
+    e.preventDefault();
+    if (!newUserEmail || !newUserEmail.includes('@')) {
+      setFeedback('Please enter a valid email address.');
+      return;
+    }
+    setCreatingUser(true);
+    setFeedback(null);
+    try {
+      const res = await fetch('/api/system/users', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({
+          action: 'create_user',
+          name: newUserName,
+          email: newUserEmail,
+          password: newUserPassword,
+          balance: parseFloat(newUserBalance) || 0,
+          currency: newUserCurrency,
+          role: newUserRole === 'admin' || newUserRole === 'administrator' ? 'developer' : newUserRole,
+          status: newUserStatus,
+        }),
+      });
+      const data = await res.json();
+      if (res.ok && data.success) {
+        setUsers((prev) => [data.user, ...prev]);
+        setShowAddModal(false);
+        setNewUserName('');
+        setNewUserEmail('');
+        setNewUserPassword('');
+        setNewUserBalance('0.00');
+        setFeedback(`Successfully created developer account for ${data.user.email}`);
+        setTimeout(() => setFeedback(null), 5000);
+      } else {
+        setFeedback(data.error || 'Failed to create user.');
+      }
+    } catch (err: any) {
+      setFeedback('Error creating user: ' + err.message);
+    } finally {
+      setCreatingUser(false);
+    }
+  };
+
   return (
     <div className="w-full max-w-5xl mx-auto space-y-6 font-['Nunito',sans-serif]">
       {/* Page Header */}
@@ -202,15 +261,26 @@ export default function UsersManagementPage() {
           <h1 className="text-2xl font-bold text-white tracking-tight">Users</h1>
         </div>
 
-        <div className="relative w-full sm:w-64">
-          <Search className="w-3.5 h-3.5 text-[#80858e] absolute left-3 top-3 pointer-events-none" />
-          <input
-            type="text"
-            value={search}
-            onChange={(e) => setSearch(e.target.value)}
-            placeholder="Search user or email..."
-            className="w-full bg-[#1B1B1C] border border-[#2E2E32] rounded-xl pl-9 pr-3 py-2 text-xs text-white placeholder:text-[#555861] focus:outline-none focus:border-white/50"
-          />
+        <div className="flex items-center gap-3 w-full sm:w-auto">
+          <div className="relative w-full sm:w-64">
+            <Search className="w-3.5 h-3.5 text-[#80858e] absolute left-3 top-3 pointer-events-none" />
+            <input
+              type="text"
+              value={search}
+              onChange={(e) => setSearch(e.target.value)}
+              placeholder="Search user or email..."
+              className="w-full bg-[#1B1B1C] border border-[#2E2E32] rounded-xl pl-9 pr-3 py-2 text-xs text-white placeholder:text-[#555861] focus:outline-none focus:border-white/50"
+            />
+          </div>
+
+          <button
+            type="button"
+            onClick={() => setShowAddModal(true)}
+            className="px-3.5 py-2 rounded-xl bg-white hover:bg-neutral-200 text-black text-xs font-bold flex items-center gap-1.5 transition-colors cursor-pointer shrink-0 shadow-xs"
+          >
+            <Plus className="w-3.5 h-3.5" />
+            <span>Add User</span>
+          </button>
         </div>
       </div>
 
@@ -709,6 +779,135 @@ export default function UsersManagementPage() {
                 </button>
               )}
             </div>
+          </div>
+        </div>
+      )}
+
+      {/* Add User Modal */}
+      {showAddModal && (
+        <div className="fixed inset-0 z-50 flex items-center justify-center p-4 bg-black/80 backdrop-blur-xs">
+          <div className="bg-[#1B1B1C] border border-[#2E2E32] rounded-2xl w-full max-w-md p-6 space-y-5 shadow-2xl text-xs animate-in fade-in zoom-in-95 duration-150">
+            <div className="flex items-center justify-between border-b border-[#2E2E32] pb-3">
+              <div className="flex items-center gap-2">
+                <UserPlus className="w-4 h-4 text-white" />
+                <h3 className="text-sm font-bold text-white">Add New User</h3>
+              </div>
+              <button
+                onClick={() => setShowAddModal(false)}
+                className="text-[#80858e] hover:text-white p-1 rounded-lg hover:bg-[#252529] cursor-pointer"
+              >
+                <X className="w-4 h-4" />
+              </button>
+            </div>
+
+            <form onSubmit={handleCreateUser} className="space-y-4">
+              <div className="space-y-1">
+                <label className="text-[#80858e] font-medium">Display Name</label>
+                <input
+                  type="text"
+                  placeholder="e.g. Niloy Rahman"
+                  value={newUserName}
+                  onChange={(e) => setNewUserName(e.target.value)}
+                  className="w-full bg-[#151517] border border-[#2E2E32] rounded-xl px-3.5 py-2 text-white placeholder:text-[#555861] focus:outline-none focus:border-white/50"
+                />
+              </div>
+
+              <div className="space-y-1">
+                <label className="text-[#80858e] font-medium">Email Address <span className="text-rose-400">*</span></label>
+                <input
+                  type="email"
+                  required
+                  placeholder="developer@company.com"
+                  value={newUserEmail}
+                  onChange={(e) => setNewUserEmail(e.target.value)}
+                  className="w-full bg-[#151517] border border-[#2E2E32] rounded-xl px-3.5 py-2 text-white font-mono placeholder:text-[#555861] focus:outline-none focus:border-white/50"
+                />
+              </div>
+
+              <div className="space-y-1">
+                <label className="text-[#80858e] font-medium">Initial Password (Optional)</label>
+                <input
+                  type="password"
+                  placeholder="Leave empty or set min. 6 chars"
+                  value={newUserPassword}
+                  onChange={(e) => setNewUserPassword(e.target.value)}
+                  className="w-full bg-[#151517] border border-[#2E2E32] rounded-xl px-3.5 py-2 text-white font-mono placeholder:text-[#555861] focus:outline-none focus:border-white/50"
+                />
+              </div>
+
+              <div className="grid grid-cols-2 gap-3">
+                <div className="space-y-1">
+                  <label className="text-[#80858e] font-medium">Developer Role</label>
+                  <select
+                    value={newUserRole}
+                    onChange={(e) => setNewUserRole(e.target.value)}
+                    className="w-full bg-[#151517] border border-[#2E2E32] rounded-xl px-3 py-2 text-white focus:outline-none focus:border-white/50 cursor-pointer"
+                  >
+                    <option value="developer">Developer (Standard)</option>
+                    <option value="enterprise">Enterprise Tier</option>
+                    <option value="team_member">Team Member</option>
+                    <option value="viewer">Read-Only Viewer</option>
+                  </select>
+                </div>
+
+                <div className="space-y-1">
+                  <label className="text-[#80858e] font-medium">Status</label>
+                  <select
+                    value={newUserStatus}
+                    onChange={(e) => setNewUserStatus(e.target.value)}
+                    className="w-full bg-[#151517] border border-[#2E2E32] rounded-xl px-3 py-2 text-white focus:outline-none focus:border-white/50 cursor-pointer"
+                  >
+                    <option value="active">Active</option>
+                    <option value="restricted">Restricted</option>
+                    <option value="suspended">Suspended</option>
+                  </select>
+                </div>
+              </div>
+
+              <div className="grid grid-cols-2 gap-3">
+                <div className="space-y-1">
+                  <label className="text-[#80858e] font-medium">Starting Balance</label>
+                  <input
+                    type="number"
+                    step="0.01"
+                    min="0"
+                    value={newUserBalance}
+                    onChange={(e) => setNewUserBalance(e.target.value)}
+                    className="w-full bg-[#151517] border border-[#2E2E32] rounded-xl px-3.5 py-2 text-white font-mono focus:outline-none focus:border-white/50"
+                  />
+                </div>
+
+                <div className="space-y-1">
+                  <label className="text-[#80858e] font-medium">Currency</label>
+                  <select
+                    value={newUserCurrency}
+                    onChange={(e) => setNewUserCurrency(e.target.value as 'USD' | 'BDT')}
+                    className="w-full bg-[#151517] border border-[#2E2E32] rounded-xl px-3 py-2 text-white focus:outline-none focus:border-white/50 cursor-pointer"
+                  >
+                    <option value="USD">USD ($)</option>
+                    <option value="BDT">BDT (৳)</option>
+                  </select>
+                </div>
+              </div>
+
+              <div className="flex items-center justify-end gap-2 pt-3 border-t border-[#2E2E32]">
+                <button
+                  type="button"
+                  onClick={() => setShowAddModal(false)}
+                  className="px-4 py-2 rounded-xl text-[#80858e] hover:text-white hover:bg-[#252528] transition-colors cursor-pointer"
+                >
+                  Cancel
+                </button>
+                <button
+                  type="submit"
+                  disabled={creatingUser || !newUserEmail}
+                  className="px-4 py-2 rounded-xl bg-white hover:bg-neutral-200 text-black font-bold flex items-center gap-1.5 transition-colors cursor-pointer shadow-xs disabled:opacity-50"
+                >
+                  {creatingUser ? <Loader2 className="w-3.5 h-3.5 animate-spin" /> : <Plus className="w-3.5 h-3.5" />}
+                  <span>{creatingUser ? 'Creating...' : 'Create Account'}</span>
+                </button>
+              </div>
+            </form>
           </div>
         </div>
       )}

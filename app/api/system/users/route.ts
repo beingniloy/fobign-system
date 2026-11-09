@@ -43,9 +43,157 @@ export async function POST(req: NextRequest) {
     const body = await req.json();
     const { userId, action, new_balance, currency, balanceAdjustment, grantedAdjustment, duration_hours, reason } = body;
 
+    // 0. Action: Create User (does not require existing userId)
+    if (action === 'create_user') {
+      const { name, email, role, status, balance, currency: userCurrency, password } = body;
+      if (!email || !email.includes('@')) {
+        return NextResponse.json({ error: 'Valid email address is required' }, { status: 400 });
+      }
+
+      const normalizedEmail = email.trim().toLowerCase();
+      if (db.getUser(normalizedEmail)) {
+        return NextResponse.json({ error: 'A developer account with this email address already exists' }, { status: 400 });
+      }
+
+      const newId = `usr_${Date.now().toString(36)}_${Math.random().toString(36).substring(2, 6)}`;
+      const initialBalance = parseFloat(balance) || 0;
+      const sanitizedRole = (role === 'admin' || role === 'administrator') ? 'developer' : (role || 'developer');
+
+      const newUser = {
+        id: newId,
+        name: name?.trim() || normalizedEmail.split('@')[0],
+        email: normalizedEmail,
+        role: sanitizedRole,
+        status: status || 'active',
+        balance: initialBalance,
+        balance_usd: initialBalance,
+        balance_bdt: initialBalance * (db.exchangeRateSettings?.rate || 122.5),
+        granted_usd: 0,
+        currency: (userCurrency || 'USD') as 'USD' | 'BDT',
+        password_hash: password ? `plain:${password}` : undefined,
+        created_at: new Date().toISOString(),
+        restricted_until: null,
+        restriction_reason: null,
+      };
+
+      db.users.set(newUser.id, newUser as any);
+      db.users.set(newUser.email, newUser as any);
+      db.persist();
+
+      db.addAuditLog({
+        admin_email: 'admin@fobign.com',
+        action: 'USER_CREATED',
+        category: 'Access',
+        target_resource: `${newUser.id} (${newUser.email})`,
+        details: `Created new developer account with role ${newUser.role} and starting balance $${initialBalance.toFixed(2)} ${newUser.currency}.`,
+      });
+
+      return NextResponse.json({ success: true, user: newUser });
+    }
+
     const user = db.getUser(userId);
     if (!user) {
       return NextResponse.json({ error: 'User not found' }, { status: 404 });
+    }
+
+    // Password Update Action
+    if (action === 'change_password') {
+      const { new_password } = body;
+      if (!new_password || new_password.trim().length < 6) {
+        return NextResponse.json({ error: 'Password must be at least 6 characters.' }, { status: 400 });
+      }
+      user.password_hash = `plain:${new_password.trim()}`;
+      db.persist();
+
+      db.addAuditLog({
+        admin_email: 'admin@fobign.com',
+        action: 'PASSWORD_CHANGED',
+        category: 'Security',
+        target_resource: `${user.id} (${user.email})`,
+        details: `Administrator changed password credentials for user ${user.email}.`,
+      });
+
+      return NextResponse.json({ success: true, message: 'Password updated successfully.' });
+    }
+
+    // Password Reset Email Dispatch Action
+    if (action === 'send_password_reset') {
+      const mailSettings = db.getMailSettings();
+      const resetToken = crypto.randomUUID();
+      const resetUrl = `https://platform.fobign.com/reset-password?token=${resetToken}&email=${encodeURIComponent(user.email)}`;
+      const mailSubject = 'Reset Your Fobign Developer Password';
+      const mailText = `Hello ${user.name || 'Developer'},\n\nA password reset request was initiated for your Fobign account.\n\nClick the link below to set a new password:\n${resetUrl}\n\nIf you did not request this, you can safely ignore this email.\n\n— Fobign Security Team`;
+
+      let mailStatus: 'sent' | 'failed' = 'sent';
+      let mailErr: string | undefined = undefined;
+
+      const apiKey = mailSettings.resend?.api_key?.trim() || mailSettings.api_key?.trim();
+      if (apiKey) {
+        try {
+          const fromEmail = mailSettings.resend?.from_email?.trim() || mailSettings.sender_email || 'noreply@fobign.com';
+          const fromName = mailSettings.resend?.from_name?.trim() || mailSettings.sender_name || 'Fobign Platform';
+          const r = await fetch('https://api.resend.com/emails', {
+            method: 'POST',
+            headers: {
+              'Authorization': `Bearer ${apiKey}`,
+              'Content-Type': 'application/json',
+            },
+            body: JSON.stringify({
+              from: `${fromName} <${fromEmail}>`,
+              to: [user.email],
+              subject: mailSubject,
+              text: mailText,
+              html: `
+                <div style="font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, sans-serif; max-width: 520px; margin: 0 auto; padding: 24px; background: #ffffff; color: #111111; border: 1px solid #e5e5e5; border-radius: 12px;">
+                  <div style="font-weight: 800; font-size: 18px; margin-bottom: 12px; letter-spacing: -0.5px;">FOBIGN</div>
+                  <h3 style="font-size: 16px; margin: 0 0 12px; color: #111;">${mailSubject}</h3>
+                  <p style="font-size: 14px; color: #333; line-height: 1.6;">Hello ${user.name || 'Developer'},</p>
+                  <p style="font-size: 14px; color: #333; line-height: 1.6;">A password reset request was initiated for your Fobign account.</p>
+                  <div style="margin: 20px 0;">
+                    <a href="${resetUrl}" style="background: #000000; color: #ffffff; padding: 10px 20px; border-radius: 6px; text-decoration: none; font-size: 13px; font-weight: 600; display: inline-block;">Reset Password</a>
+                  </div>
+                  <p style="font-size: 12px; color: #666;">Or copy this URL into your browser:<br/><code style="word-break: break-all;">${resetUrl}</code></p>
+                  <hr style="border: none; border-top: 1px solid #eee; margin: 24px 0;" />
+                  <p style="font-size: 11px; color: #888;">If you did not request this, please disregard this email.</p>
+                </div>
+              `,
+            }),
+          });
+          if (!r.ok) {
+            const ed = await r.json();
+            mailStatus = 'failed';
+            mailErr = ed.message || `HTTP ${r.status}`;
+          }
+        } catch (e: any) {
+          mailStatus = 'failed';
+          mailErr = e.message;
+        }
+      }
+
+      db.addMailLog({
+        to: user.email,
+        subject: mailSubject,
+        body: mailText,
+        provider: mailSettings.active_provider || 'resend',
+        status: mailStatus,
+        error: mailErr,
+      });
+
+      db.addAuditLog({
+        admin_email: 'admin@fobign.com',
+        action: 'PASSWORD_RESET_DISPATCHED',
+        category: 'Security',
+        target_resource: `${user.id} (${user.email})`,
+        details: `Sent password reset email to ${user.email}. Status: ${mailStatus}${mailErr ? ` (${mailErr})` : ''}`,
+      });
+
+      return NextResponse.json({
+        success: true,
+        message: mailStatus === 'sent'
+          ? `Password reset email dispatched to ${user.email}.`
+          : `Password reset link generated and logged to mail records. (Mail gateway status: ${mailErr || 'logged'})`,
+        reset_url: resetUrl,
+      });
     }
 
     let changeSummary: string[] = [];
@@ -176,7 +324,12 @@ export async function PATCH(req: NextRequest) {
 
     if (body.name !== undefined) user.name = body.name;
     if (body.email !== undefined) user.email = body.email;
-    if (body.role !== undefined) user.role = body.role;
+    if (body.role !== undefined) {
+      user.role = (body.role === 'admin' || body.role === 'administrator') ? 'developer' : body.role;
+    }
+    if (body.password) {
+      user.password_hash = `plain:${body.password.trim()}`;
+    }
     if (body.balance !== undefined) {
       user.balance = Number(body.balance);
       user.balance_usd = Number(body.balance);
