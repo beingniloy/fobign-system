@@ -421,4 +421,19 @@ export interface SmsLog {
   created_at: string;
 }
 
+export interface ChatSettings {
+  enabled: boolean;
+  allowedModels: string[];
+  defaultModel: string;
+  freeTokenLimit: number;
+  resetHours: number;
+  systemPrompt: string;
+  enableThinking: boolean;
+  allowGuest: boolean;
+  greetingMessage: string;
+  rateLimitPerMinute: number;
+  maxOutputTokens: number;
+}
+
+
 

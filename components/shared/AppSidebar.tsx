@@ -98,7 +98,10 @@ export default function AppSidebar({
       : 'platform';
 
   const [settingsExpanded, setSettingsExpanded] = useState(
-    pathname.startsWith('/settings')
+    pathname.startsWith('/settings') && !pathname.startsWith('/settings/chat-')
+  );
+  const [chatExpanded, setChatExpanded] = useState(
+    pathname.startsWith('/settings/chat-')
   );
   const [showProfileMenu, setShowProfileMenu] = useState(false);
   const [customLogo, setCustomLogo] = useState<string | null>(null);
@@ -203,6 +206,12 @@ export default function AppSidebar({
     { id: 'admin_audit', label: 'Audit Logs', slug: '/audit-logs', icon: ShieldAlert },
   ];
 
+  const adminChatItems = [
+    { id: 'chat_models', label: 'Models', slug: '/settings/chat-models', icon: SolidLayersIcon },
+    { id: 'chat_limits', label: 'Limits & Quota', slug: '/settings/chat-limits', icon: SolidSlidersIcon },
+    { id: 'chat_general', label: 'Chat Behavior', slug: '/settings/chat-general', icon: Sparkles },
+  ];
+
   const adminSettingsItems = [
     { id: 'settings_general', label: 'General', slug: '/settings/general', icon: SolidSlidersIcon },
     { id: 'settings_branding', label: 'Branding', slug: '/settings/branding', icon: SolidPaletteIcon },
@@ -282,7 +291,44 @@ export default function AppSidebar({
               );
             })}
 
+            {/* AI Chat Management Group */}
             <div className="pt-2">
+              <button
+                onClick={() => setChatExpanded(!chatExpanded)}
+                className={`w-full flex items-center justify-between px-3.5 py-2.5 rounded-xl text-xs font-semibold tracking-wide transition-all ${
+                  pathname.startsWith('/settings/chat-') ? 'text-white bg-[#222225]' : 'text-[#9ca3af] hover:text-white hover:bg-[#222225]'
+                }`}
+              >
+                <div className="flex items-center gap-3.5">
+                  <SolidChatDotsIcon size={18} className={pathname.startsWith('/settings/chat-') ? 'text-[#f54e00]' : 'text-[#7E828A]'} />
+                  <span>AI Chat</span>
+                </div>
+                <ChevronDown className={`w-3.5 h-3.5 text-[#7E828A] transition-transform duration-200 ${chatExpanded ? 'rotate-180' : ''}`} />
+              </button>
+
+              {chatExpanded && (
+                <div className="pl-4 pr-1 py-1 space-y-0.5 border-l border-[#2E2E32] ml-5 mt-1">
+                  {adminChatItems.map((item) => {
+                    const Icon = item.icon;
+                    const active = isItemActive(item.slug, item.id);
+                    return (
+                      <button
+                        key={item.id}
+                        onClick={() => handleNavigate(item.slug, item.id)}
+                        className={`w-full flex items-center gap-2.5 px-2.5 py-1.5 rounded-lg text-[11px] font-medium transition-all ${
+                          active ? 'bg-[#2D2D30] text-white font-bold' : 'text-[#858993] hover:text-white hover:bg-[#222225]'
+                        }`}
+                      >
+                        <Icon size={14} className={active ? 'text-[#f54e00]' : 'text-[#7E828A]'} />
+                        <span className="truncate">{item.label}</span>
+                      </button>
+                    );
+                  })}
+                </div>
+              )}
+            </div>
+
+            <div className="pt-1">
               <button
                 onClick={() => setSettingsExpanded(!settingsExpanded)}
                 className={`w-full flex items-center justify-between px-3.5 py-2.5 rounded-xl text-xs font-semibold tracking-wide transition-all ${

@@ -27,6 +27,7 @@ import type {
   SmsSettings,
   SmsLog,
   AuthSettings,
+  ChatSettings,
 } from './types';
 
 export const SUPABASE_URL = process.env.SUPABASE_URL || 'https://oltjngakooyiysonlkqi.supabase.co';
@@ -258,6 +259,20 @@ class DatabaseStore {
     github_client_id: '',
     github_client_secret: '',
     supabase_callback_url: 'https://oltjngakooyiysonlkqi.supabase.co/auth/v1/callback',
+  };
+
+  chatSettings: ChatSettings = {
+    enabled: true,
+    allowedModels: ['merin-v1.0', 'deepseek-chat', 'gpt-4o', 'claude-3-5-sonnet'],
+    defaultModel: 'merin-v1.0',
+    freeTokenLimit: 50000,
+    resetHours: 24,
+    systemPrompt: 'You are Fobign AI, an intelligent, helpful, and concise conversational assistant.',
+    enableThinking: true,
+    allowGuest: false,
+    greetingMessage: 'Welcome to Fobign Chat! Please enter your email address to sign in or get started.',
+    rateLimitPerMinute: 20,
+    maxOutputTokens: 4096,
   };
 
   branding: PlatformBranding = {
@@ -493,6 +508,7 @@ class DatabaseStore {
         smsSettings: this.smsSettings || null,
         smsLogs: this.smsLogs || [],
         authSettings: this.authSettings || null,
+        chatSettings: this.chatSettings || null,
       };
       fs.writeFileSync(filePath, JSON.stringify(payload, null, 2), 'utf-8');
       try {
@@ -566,6 +582,7 @@ class DatabaseStore {
         if (data.smsSettings) this.smsSettings = { ...this.smsSettings, ...data.smsSettings };
         if (data.smsLogs && Array.isArray(data.smsLogs)) this.smsLogs = data.smsLogs;
         if (data.authSettings) this.authSettings = { ...this.authSettings, ...data.authSettings };
+        if (data.chatSettings) this.chatSettings = { ...this.chatSettings, ...data.chatSettings };
         this.lastDiskSyncTime = Date.now();
       } else {
         this.persist();
@@ -1226,7 +1243,7 @@ class DatabaseStore {
   }
 
   getAnnouncement(): AnnouncementSettings {
-    this.loadFromDisk(true);
+    this.loadFromDisk();
     return this.announcementSettings;
   }
 
@@ -1697,6 +1714,21 @@ class DatabaseStore {
   getSmsLogs(): SmsLog[] {
     this.loadFromDisk();
     return this.smsLogs;
+  }
+
+  getChatSettings(): ChatSettings {
+    this.loadFromDisk();
+    return this.chatSettings;
+  }
+
+  saveChatSettings(settings: Partial<ChatSettings>): ChatSettings {
+    this.loadFromDisk();
+    this.chatSettings = {
+      ...this.chatSettings,
+      ...settings,
+    };
+    this.persist();
+    return this.chatSettings;
   }
 }
 
