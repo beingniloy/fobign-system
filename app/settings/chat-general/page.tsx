@@ -79,7 +79,7 @@ export default function ChatGeneralSettingsPage() {
           </label>
 
           <label className="flex items-center justify-between p-3.5 bg-[#121214] border border-[#27272a] rounded-lg cursor-pointer">
-            <span className="text-sm font-medium text-white">Lattice Thinking Visualizer</span>
+            <span className="text-sm font-medium text-white">Thinking Visualizer</span>
             <input
               type="checkbox"
               checked={enableThinking}

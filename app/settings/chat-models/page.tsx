@@ -81,17 +81,20 @@ export default function ChatModelsSettingsPage() {
           <label className="block text-xs font-medium text-[#a1a1aa] mb-2">Default Model</label>
           <select
             value={defaultModel}
-            onChange={(e) => setDefaultModel(e.target.value)}
+            onChange={(e) => {
+              const val = e.target.value;
+              setDefaultModel(val);
+              if (!allowedModels.includes(val)) {
+                setAllowedModels([...allowedModels, val]);
+              }
+            }}
             className="w-full bg-[#121214] border border-[#27272a] rounded-lg px-3.5 py-2.5 text-sm text-white focus:outline-none focus:border-white"
           >
-            {allowedModels.map((id) => {
-              const info = allModels.find((m) => m.id === id);
-              return (
-                <option key={id} value={id}>
-                  {info?.display_name || id}
-                </option>
-              );
-            })}
+            {allModels.map((m) => (
+              <option key={m.id} value={m.id}>
+                {m.display_name} ({m.id})
+              </option>
+            ))}
           </select>
         </div>
 
