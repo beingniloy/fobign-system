@@ -2,6 +2,7 @@ import { NextRequest, NextResponse } from 'next/server';
 import { db } from '@/lib/db';
 import type { ApiKey, FobignUser } from '@/lib/types';
 import { z } from 'zod';
+import crypto from 'crypto';
 
 const serverSignupSchema = z.object({
   name: z.string().optional(),
@@ -33,22 +34,22 @@ export async function POST(req: NextRequest) {
       created_at: new Date().toISOString(),
     };
 
-    db.users.set(newUser.id, newUser);
-    db.users.set(newUser.email, newUser);
+    db.addUser(newUser);
 
-    // Automatically create first API key
-    const rawKey = `sk-${Math.random().toString(36).substring(2, 7)}${Math.random().toString(36).substring(2, 7)}${Math.random().toString(36).substring(2, 7)}`;
-    const trackingId = `${Math.random().toString(36).substring(2, 10)} ... ${Math.random().toString(36).substring(2, 10)}`;
+    // Automatically create initial standard API key (sk- + 32 hex chars)
+    const randomHex = crypto.randomBytes(16).toString('hex');
+    const rawKey = `sk-${randomHex}`;
+    const trackingId = `fb_${crypto.randomBytes(8).toString('hex')}`;
     const firstKey: ApiKey = {
       id: `key_${Date.now()}`,
       user_id: newUser.id,
       name: 'Default Key',
       key_hash: rawKey,
-      key_preview: `sk-${rawKey.slice(3, 8)}*****${rawKey.slice(-4)}`,
+      key_preview: `sk-${randomHex.slice(0, 4)}••••••••${randomHex.slice(-4)}`,
       raw_key: rawKey,
       tracking_id: trackingId,
-      rpm_limit: 60,
-      tpm_limit: 100000,
+      rpm_limit: 10000,
+      tpm_limit: 5000000,
       is_active: true,
       created_at: new Date().toISOString().split('T')[0],
       last_used_at: null,

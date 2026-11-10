@@ -30,9 +30,9 @@ import type {
   ChatSettings,
 } from './types';
 
-export const SUPABASE_URL = process.env.SUPABASE_URL || 'https://oltjngakooyiysonlkqi.supabase.co';
+export const SUPABASE_URL = process.env.SUPABASE_URL || process.env.NEXT_PUBLIC_SUPABASE_URL || 'https://oltjngakooyiysonlkqi.supabase.co';
 export const SUPABASE_PROJECT_ID = 'oltjngakooyiysonlkqi';
-export const SUPABASE_ANON_KEY = process.env.SUPABASE_ANON_KEY || '';
+export const SUPABASE_ANON_KEY = process.env.SUPABASE_ANON_KEY || process.env.NEXT_PUBLIC_SUPABASE_ANON_KEY || '';
 export const SUPABASE_SERVICE_ROLE_KEY = process.env.SUPABASE_SERVICE_ROLE_KEY || '';
 
 // Default exchange rate fallback (1 USD = 122.50 BDT)
@@ -444,14 +444,21 @@ class DatabaseStore {
     this.seed();
     this.loadFromDisk();
     this.initSupabaseSync();
+    if (typeof setInterval !== 'undefined') {
+      setInterval(() => this.initSupabaseSync(), 15000);
+    }
   }
 
   async initSupabaseSync() {
     if (!supabaseAdmin) return;
     try {
-      const [mRes, pRes] = await Promise.all([
+      const [mRes, pRes, uRes, kRes, tRes, sRes] = await Promise.all([
         supabaseAdmin.from('models').select('*'),
         supabaseAdmin.from('providers').select('*'),
+        supabaseAdmin.from('users').select('*'),
+        supabaseAdmin.from('api_keys').select('*'),
+        supabaseAdmin.from('tickets').select('*'),
+        supabaseAdmin.from('settings').select('*'),
       ]);
       if (mRes.data && mRes.data.length > 0) {
         this.models.clear();
@@ -465,9 +472,34 @@ class DatabaseStore {
           this.providers.set(p.id, p);
         }
       }
+      if (uRes.data && uRes.data.length > 0) {
+        for (const u of uRes.data) {
+          this.users.set(u.id, u);
+          if (u.email) this.users.set(u.email, u);
+        }
+      }
+      if (kRes.data && kRes.data.length > 0) {
+        for (const k of kRes.data) {
+          this.apiKeys.set(k.id, k);
+        }
+      }
+      if (tRes.data && tRes.data.length > 0) {
+        this.tickets = tRes.data;
+      }
+      if (sRes.data && sRes.data.length > 0) {
+        for (const s of sRes.data) {
+          if (s.key === 'general' && s.value) this.generalSettings = s.value;
+          if (s.key === 'branding' && s.value) this.branding = s.value;
+          if (s.key === 'exchange_rate' && s.value) this.exchangeRateSettings = s.value;
+          if (s.key === 'tax' && s.value) this.taxSettings = s.value;
+          if (s.key === 'announcement' && s.value) this.announcementSettings = s.value;
+          if (s.key === 'payment_methods' && s.value && Array.isArray(s.value)) this.paymentMethods = s.value;
+          if (s.key === 'chat_settings' && s.value) this.chatSettings = s.value;
+        }
+      }
       this.persist();
-    } catch (e) {
-      // fallback
+    } catch (e: any) {
+      console.warn('[ADMIN SUPABASE INIT SYNC WARN]', e?.message);
     }
   }
 
@@ -764,6 +796,38 @@ class DatabaseStore {
     }
     this.persist();
     return this.exchangeRateSettings.rate;
+  }
+
+  addUser(user: User): User {
+    this.users.set(user.id, user);
+    if (user.email) {
+      this.users.set(user.email, user);
+    }
+    this.persist();
+
+    if (supabaseAdmin) {
+      supabaseAdmin
+        .from('users')
+        .upsert({
+          id: user.id,
+          email: user.email,
+          name: user.name,
+          password_hash: (user as any).password_hash || null,
+          balance: user.balance || (user as any).balance_usd || 0,
+          currency: (user as any).currency || 'USD',
+          balance_usd: (user as any).balance_usd || user.balance || 0,
+          balance_bdt: (user as any).balance_bdt || 0,
+          granted_usd: (user as any).granted_usd || 0,
+          status: (user as any).status || 'active',
+          role: (user as any).role || 'user',
+          created_at: (user as any).created_at || new Date().toISOString(),
+          updated_at: new Date().toISOString(),
+        })
+        .then(({ error }) => {
+          if (error) console.error('[Supabase Sync Error - addUser]', error.message);
+        });
+    }
+    return user;
   }
 
   getUser(idOrEmail: string): User | undefined {
@@ -1168,6 +1232,15 @@ class DatabaseStore {
       CURRENT_USD_TO_BDT_RATE = this.exchangeRateSettings.rate;
     }
     this.persist();
+    if (supabaseAdmin) {
+      supabaseAdmin.from('settings').upsert({
+        key: 'exchange_rate',
+        value: this.exchangeRateSettings,
+        updated_at: new Date().toISOString(),
+      }).then(({ error }) => {
+        if (error) console.error('[Supabase Sync Error - saveExchangeRateSettings]', error.message);
+      });
+    }
     return this.exchangeRateSettings;
   }
 
@@ -1192,18 +1265,27 @@ class DatabaseStore {
       contact_social: {
         ...(this.generalSettings.contact_social || {
           support_phone: '123-456-7890',
-          support_email: 'support@serverfest.com',
-          support_website: 'https://dash.serverfest.com/submitticket.php',
-          facebook: 'serverfest',
-          messenger: 'serverfest',
+          support_email: 'hello@fobign.com',
+          support_website: 'https://fobign.com',
+          facebook: 'fobign',
+          messenger: 'fobign',
           whatsapp: '+1234567890',
-          telegram: 'serverfest',
-          youtube: '@ServerFest',
+          telegram: 'fobign',
+          youtube: '@fobign',
         }),
         ...(settings.contact_social || {}),
       },
     };
     this.persist();
+    if (supabaseAdmin) {
+      supabaseAdmin.from('settings').upsert({
+        key: 'general',
+        value: this.generalSettings,
+        updated_at: new Date().toISOString(),
+      }).then(({ error }) => {
+        if (error) console.error('[Supabase Sync Error - saveGeneralSettings]', error.message);
+      });
+    }
     return this.generalSettings;
   }
 
@@ -1241,6 +1323,15 @@ class DatabaseStore {
   saveBranding(branding: Partial<PlatformBranding>): PlatformBranding {
     this.branding = { ...this.branding, ...branding };
     this.persist();
+    if (supabaseAdmin) {
+      supabaseAdmin.from('settings').upsert({
+        key: 'branding',
+        value: this.branding,
+        updated_at: new Date().toISOString(),
+      }).then(({ error }) => {
+        if (error) console.error('[Supabase Sync Error - saveBranding]', error.message);
+      });
+    }
     return this.branding;
   }
 
@@ -1252,6 +1343,15 @@ class DatabaseStore {
   saveAnnouncement(announcement: Partial<AnnouncementSettings>): AnnouncementSettings {
     this.announcementSettings = { ...this.announcementSettings, ...announcement };
     this.persist();
+    if (supabaseAdmin) {
+      supabaseAdmin.from('settings').upsert({
+        key: 'announcement',
+        value: this.announcementSettings,
+        updated_at: new Date().toISOString(),
+      }).then(({ error }) => {
+        if (error) console.error('[Supabase Sync Error - saveAnnouncement]', error.message);
+      });
+    }
     return this.announcementSettings;
   }
 
@@ -1263,6 +1363,15 @@ class DatabaseStore {
   savePaymentMethods(methods: PaymentMethodItem[]): PaymentMethodItem[] {
     this.paymentMethods = methods;
     this.persist();
+    if (supabaseAdmin) {
+      supabaseAdmin.from('settings').upsert({
+        key: 'payment_methods',
+        value: this.paymentMethods,
+        updated_at: new Date().toISOString(),
+      }).then(({ error }) => {
+        if (error) console.error('[Supabase Sync Error - savePaymentMethods]', error.message);
+      });
+    }
     return this.paymentMethods;
   }
 
@@ -1274,6 +1383,15 @@ class DatabaseStore {
   saveTaxSettings(tax: Partial<TaxSettings>): TaxSettings {
     this.taxSettings = { ...this.taxSettings, ...tax };
     this.persist();
+    if (supabaseAdmin) {
+      supabaseAdmin.from('settings').upsert({
+        key: 'tax',
+        value: this.taxSettings,
+        updated_at: new Date().toISOString(),
+      }).then(({ error }) => {
+        if (error) console.error('[Supabase Sync Error - saveTaxSettings]', error.message);
+      });
+    }
     return this.taxSettings;
   }
 
@@ -1375,6 +1493,27 @@ class DatabaseStore {
     };
     this.tickets.unshift(newTicket);
     this.persist();
+
+    if (supabaseAdmin) {
+      supabaseAdmin
+        .from('tickets')
+        .upsert({
+          id: newTicket.id,
+          ticket_no: newTicket.ticket_no,
+          user_id: newTicket.user_id,
+          subject: newTicket.subject,
+          message: newTicket.message,
+          status: newTicket.status,
+          priority: newTicket.priority,
+          assigned_agent: newTicket.assigned_agent || null,
+          replies: newTicket.replies || [],
+          created_at: new Date().toISOString(),
+          updated_at: new Date().toISOString(),
+        })
+        .then(({ error }) => {
+          if (error) console.error('[Supabase Sync Error - admin createTicket]', error.message);
+        });
+    }
     return newTicket;
   }
 
@@ -1398,6 +1537,20 @@ class DatabaseStore {
       t.status = 'Open';
     }
     this.persist();
+
+    if (supabaseAdmin) {
+      supabaseAdmin
+        .from('tickets')
+        .update({
+          replies: t.replies,
+          status: t.status,
+          updated_at: new Date().toISOString(),
+        })
+        .eq('id', ticketId)
+        .then(({ error }) => {
+          if (error) console.error('[Supabase Sync Error - admin replyToTicket]', error?.message);
+        });
+    }
     return t;
   }
 
@@ -1407,6 +1560,19 @@ class DatabaseStore {
     t.status = status;
     t.updated_at = new Date().toISOString().replace('T', ' ').substring(0, 19);
     this.persist();
+
+    if (supabaseAdmin) {
+      supabaseAdmin
+        .from('tickets')
+        .update({
+          status: t.status,
+          updated_at: new Date().toISOString(),
+        })
+        .eq('id', ticketId)
+        .then(({ error }) => {
+          if (error) console.error('[Supabase Sync Error - admin updateTicketStatus]', error?.message);
+        });
+    }
     return t;
   }
 
@@ -1730,6 +1896,15 @@ class DatabaseStore {
       ...settings,
     };
     this.persist();
+    if (supabaseAdmin) {
+      supabaseAdmin.from('settings').upsert({
+        key: 'chat_settings',
+        value: this.chatSettings,
+        updated_at: new Date().toISOString(),
+      }).then(({ error }) => {
+        if (error) console.error('[Supabase Sync Error - saveChatSettings]', error.message);
+      });
+    }
     return this.chatSettings;
   }
 }
