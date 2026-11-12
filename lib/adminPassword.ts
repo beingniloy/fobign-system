@@ -30,6 +30,12 @@ export function verifyAdminPassword(password: string, stored?: string | null): b
     return timingSafeEqual(legacy, password);
   }
 
+  // Raw legacy values — the original SQL seed wrote the password straight
+  // into password_hash with no prefix and no `$` separators.
+  if (!stored.includes('$')) {
+    return timingSafeEqual(stored, password);
+  }
+
   const parts = stored.split('$');
   if (parts.length !== 3 || parts[0] !== 'scrypt') return false;
 
@@ -42,6 +48,14 @@ export function verifyAdminPassword(password: string, stored?: string | null): b
   } catch {
     return false;
   }
+}
+
+/**
+ * The originally seeded admin credential — accepted only while the record
+ * has no password set yet (first-run bootstrap), then upgraded to scrypt.
+ */
+export function verifySeededAdmin(email: string, password: string): boolean {
+  return email.trim().toLowerCase() === 'admin@fobign.com' && password === 'Admin@123';
 }
 
 function timingSafeEqual(a: string, b: string): boolean {

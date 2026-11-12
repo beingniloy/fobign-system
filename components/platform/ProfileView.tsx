@@ -19,8 +19,11 @@ interface ProfileViewProps {
   onLogout: () => void;
   /** Persists name/email edits. Omit to hide the edit affordances. */
   onSaveProfile?: (patch: { name?: string; email?: string }) => Promise<void>;
-  /** Persists a new password. Omit to hide the password section. */
-  onSavePassword?: (newPassword: string) => Promise<void>;
+  /**
+   * Persists a new password after the themed confirm modal collects the
+   * current password. Omit to hide the password section.
+   */
+  onSavePassword?: (newPassword: string, currentPassword: string) => Promise<void>;
 }
 
 const inputCls =
@@ -167,7 +170,21 @@ export default function ProfileView({ user, onLogout, onSaveProfile, onSavePassw
   const [passwordError, setPasswordError] = useState('');
   const [passwordOk, setPasswordOk] = useState(false);
 
-  const handleSavePassword = async () => {
+  // In-website "confirm current password" modal (replaces window.prompt)
+  const [confirmModalOpen, setConfirmModalOpen] = useState(false);
+  const [currentPassword, setCurrentPassword] = useState('');
+  const [showCurrent, setShowCurrent] = useState(false);
+  const [confirmError, setConfirmError] = useState('');
+
+  const closeConfirmModal = () => {
+    if (savingPassword) return;
+    setConfirmModalOpen(false);
+    setCurrentPassword('');
+    setConfirmError('');
+    setShowCurrent(false);
+  };
+
+  const handleSavePassword = () => {
     setPasswordError('');
     setPasswordOk(false);
     if (newPassword.length < 6) {
@@ -179,14 +196,34 @@ export default function ProfileView({ user, onLogout, onSaveProfile, onSavePassw
       return;
     }
     if (!onSavePassword) return;
+    // Validate the new password first, then ask for the current one inside
+    // a themed modal instead of the browser's native prompt.
+    setCurrentPassword('');
+    setConfirmError('');
+    setShowCurrent(false);
+    setConfirmModalOpen(true);
+  };
+
+  const submitConfirm = async () => {
+    if (!onSavePassword || savingPassword) return;
+    if (!currentPassword) {
+      setConfirmError('Enter your current password.');
+      return;
+    }
     setSavingPassword(true);
+    setConfirmError('');
     try {
-      await onSavePassword(newPassword);
+      await onSavePassword(newPassword, currentPassword);
+      setConfirmModalOpen(false);
+      setCurrentPassword('');
+      setShowCurrent(false);
       setNewPassword('');
       setConfirmPassword('');
       setPasswordOk(true);
     } catch (err: any) {
-      setPasswordError(err?.message || 'Could not update password.');
+      // Stays inside the modal so the user can retry without retyping
+      // the new password.
+      setConfirmError(err?.message || 'Could not update password.');
     } finally {
       setSavingPassword(false);
     }
@@ -448,6 +485,82 @@ export default function ProfileView({ user, onLogout, onSaveProfile, onSavePassw
           Devices management
         </button>
       </div>
+
+      {/* Confirm current password — themed in-website modal (no browser prompt) */}
+      {confirmModalOpen && (
+        <div className="fixed inset-0 z-50 flex items-end sm:items-center justify-center bg-black/70 backdrop-blur-xs p-0 sm:p-4 animate-in fade-in duration-200">
+          <div className="bg-[#1B1B1C] border border-[#2E2E32] rounded-t-3xl sm:rounded-2xl w-full max-w-md p-6 space-y-5 shadow-2xl">
+            {/* Header */}
+            <div className="flex items-center justify-between pb-2 border-b border-[#28282C]">
+              <h2 className="text-base font-semibold text-white tracking-tight">
+                Confirm password change
+              </h2>
+              <button
+                onClick={closeConfirmModal}
+                disabled={savingPassword}
+                aria-label="Cancel password change"
+                className="p-1.5 rounded-lg text-[#80858e] hover:text-white hover:bg-[#28282C] transition-colors disabled:opacity-50 cursor-pointer"
+              >
+                <X className="w-5 h-5" />
+              </button>
+            </div>
+
+            <p className="text-xs text-[#80858e] leading-relaxed">
+              Enter your current admin password to confirm the change.
+            </p>
+
+            {/* Current password input */}
+            <div className="relative">
+              <input
+                autoFocus
+                type={showCurrent ? 'text' : 'password'}
+                value={currentPassword}
+                onChange={(e) => {
+                  setCurrentPassword(e.target.value);
+                  setConfirmError('');
+                }}
+                onKeyDown={(e) => {
+                  if (e.key === 'Enter') submitConfirm();
+                  if (e.key === 'Escape') closeConfirmModal();
+                }}
+                placeholder="Current password"
+                className={`${inputCls} pr-10`}
+              />
+              <button
+                type="button"
+                onClick={() => setShowCurrent(!showCurrent)}
+                aria-label={showCurrent ? 'Hide password' : 'Show password'}
+                className="absolute right-3 top-2.5 text-[#80858e] hover:text-white cursor-pointer"
+              >
+                {showCurrent ? <EyeOff className="w-4 h-4" /> : <Eye className="w-4 h-4" />}
+              </button>
+            </div>
+
+            {confirmError && <p className="text-[11px] text-rose-400">{confirmError}</p>}
+
+            {/* Actions */}
+            <div className="flex items-center justify-end gap-2 pt-1">
+              <button
+                type="button"
+                onClick={closeConfirmModal}
+                disabled={savingPassword}
+                className="px-4 py-2 rounded-xl bg-[#202023] border border-[#2E2E32] text-[#80858e] hover:text-white text-xs font-semibold transition-colors disabled:opacity-50 cursor-pointer"
+              >
+                Cancel
+              </button>
+              <button
+                type="button"
+                onClick={submitConfirm}
+                disabled={savingPassword || !currentPassword}
+                className="px-4 py-2 rounded-xl bg-white hover:bg-neutral-200 text-black text-xs font-semibold flex items-center gap-1.5 transition-colors disabled:opacity-50 cursor-pointer"
+              >
+                {savingPassword && <Loader2 className="w-3.5 h-3.5 animate-spin text-black" />}
+                <span>{savingPassword ? 'Updating...' : 'Confirm update'}</span>
+              </button>
+            </div>
+          </div>
+        </div>
+      )}
 
       {showDevicesModal && (
         <DevicesModal

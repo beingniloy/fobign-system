@@ -76,14 +76,11 @@ export default function AdminProfilePage() {
     }
   };
 
-  /** Password change — current password is required by the API. */
-  const handleSavePassword = async (newPassword: string) => {
+  /** Password change — the ProfileView modal collects the current password. */
+  const handleSavePassword = async (newPassword: string, currentPassword: string) => {
     setPageError('');
-    const currentPassword = window.prompt(
-      'Enter your CURRENT admin password to confirm the change:'
-    );
-    if (currentPassword === null) {
-      throw new Error('Password change cancelled.');
+    if (!currentPassword) {
+      throw new Error('Enter your current password.');
     }
 
     const res = await fetch('/api/system/profile', {
@@ -98,9 +95,8 @@ export default function AdminProfilePage() {
 
     const data = await res.json().catch(() => ({} as any));
     if (!res.ok || !data.success) {
-      const message = data.error || 'Could not update your password.';
-      setPageError(message);
-      throw new Error(message);
+      // Surfaced inside the confirm modal, not as a page-level banner.
+      throw new Error(data.error || 'Could not update your password.');
     }
   };
 

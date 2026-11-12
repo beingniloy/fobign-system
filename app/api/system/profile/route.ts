@@ -1,6 +1,6 @@
 import { NextRequest, NextResponse } from 'next/server';
 import { db } from '@/lib/db';
-import { verifyAdminPassword, hashAdminPassword } from '@/lib/adminPassword';
+import { verifyAdminPassword, hashAdminPassword, verifySeededAdmin } from '@/lib/adminPassword';
 
 /**
  * GET /api/system/profile — fetch the signed-in admin's own profile.
@@ -61,7 +61,13 @@ export async function PATCH(req: NextRequest) {
           { status: 400 }
         );
       }
-      if (!verifyAdminPassword(body.currentPassword, (admin as any).password_hash)) {
+      const stored = (admin as any).password_hash;
+      // No password on record yet → the seeded first-run credential still
+      // confirms the change (the new password is stored hashed below).
+      const confirmed = stored
+        ? verifyAdminPassword(body.currentPassword, stored)
+        : verifySeededAdmin(currentEmail, body.currentPassword);
+      if (!confirmed) {
         return NextResponse.json(
           { success: false, error: 'Current password is incorrect.' },
           { status: 401 }

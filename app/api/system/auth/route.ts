@@ -1,6 +1,6 @@
 import { NextRequest, NextResponse } from 'next/server';
 import { db } from '@/lib/db';
-import { verifyAdminPassword, hashAdminPassword } from '@/lib/adminPassword';
+import { verifyAdminPassword, hashAdminPassword, verifySeededAdmin } from '@/lib/adminPassword';
 
 export async function POST(req: NextRequest) {
   try {
@@ -20,7 +20,12 @@ export async function POST(req: NextRequest) {
         if (!verifyAdminPassword(password, stored)) {
           return NextResponse.json({ error: 'Invalid admin credentials.' }, { status: 401 });
         }
-      } else if (!verifyLegacyFallback(normalizedEmail, password)) {
+        // Upgrade legacy raw / plain: records to scrypt on first use.
+        if (!String(stored).startsWith('scrypt$')) {
+          (admin as any).password_hash = hashAdminPassword(password);
+          db.persist();
+        }
+      } else if (!verifySeededAdmin(normalizedEmail, password)) {
         // No password on record yet: accept the seeded credential once, then
         // persist it so the next login uses the stored hash.
         return NextResponse.json({ error: 'Invalid admin credentials.' }, { status: 401 });
@@ -42,7 +47,7 @@ export async function POST(req: NextRequest) {
     }
 
     // No admin record yet — fall back to the seeded root credentials.
-    if (verifyLegacyFallback(normalizedEmail, password)) {
+    if (verifySeededAdmin(normalizedEmail, password)) {
       return NextResponse.json({
         success: true,
         admin: {
@@ -59,9 +64,4 @@ export async function POST(req: NextRequest) {
   } catch (err: any) {
     return NextResponse.json({ error: err.message }, { status: 500 });
   }
-}
-
-/** The originally seeded admin credential, kept for first-run bootstrap. */
-function verifyLegacyFallback(email: string, password: string): boolean {
-  return email === 'admin@fobign.com' && password === 'Admin@123';
 }
