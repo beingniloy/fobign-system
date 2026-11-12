@@ -58,6 +58,7 @@ export default function UserDetailPage({ params }: UserDetailPageProps) {
 
   // Form states
   const [name, setName] = useState('');
+  const [username, setUsername] = useState('');
   const [email, setEmail] = useState('');
   const [role, setRole] = useState('developer');
   const [status, setStatus] = useState('active');
@@ -79,6 +80,7 @@ export default function UserDetailPage({ params }: UserDetailPageProps) {
           if (data.user) {
             setUser(data.user);
             setName(data.user.name || '');
+            setUsername(data.user.username || '');
             setEmail(data.user.email || '');
             setRole(data.user.role || 'developer');
             setStatus(data.user.status || 'active');
@@ -110,6 +112,7 @@ export default function UserDetailPage({ params }: UserDetailPageProps) {
         body: JSON.stringify({
           userId,
           name,
+          username,
           email,
           role,
           status,
@@ -359,6 +362,20 @@ export default function UserDetailPage({ params }: UserDetailPageProps) {
                 onChange={(e) => setName(e.target.value)}
                 className="w-full bg-[#101113] border border-[#2B2B2F] rounded-xl px-3.5 py-2 text-white focus:outline-none focus:border-white/50"
               />
+            </div>
+
+            <div>
+              <label className="block text-[#80858e] font-medium mb-1">Username</label>
+              <input
+                type="text"
+                value={username}
+                onChange={(e) => setUsername(e.target.value.replace(/\s+/g, '').toLowerCase())}
+                placeholder="login handle (letters, numbers, . _ -)"
+                className="w-full bg-[#101113] border border-[#2B2B2F] rounded-xl px-3.5 py-2 text-white font-mono focus:outline-none focus:border-white/50"
+              />
+              <p className="text-[10px] text-[#80858e] mt-1">
+                Used to sign in alongside the email address. Leave blank to disable.
+              </p>
             </div>
 
             <div>

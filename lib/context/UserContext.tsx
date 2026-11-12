@@ -1,6 +1,13 @@
 'use client';
 
 import React, { createContext, useContext, useState, useEffect, useCallback } from 'react';
+import {
+  readUserSession,
+  writeUserSession,
+  patchUserSession,
+  clearUserSession,
+  isDefinitiveRejection,
+} from '@/lib/userSession';
 
 export interface CurrentUser {
   id: string;
@@ -41,27 +48,18 @@ const UserContext = createContext<UserContextType | null>(null);
 
 export function UserProvider({ children }: { children: React.ReactNode }) {
   const [user, setUser] = useState<CurrentUser | null>(() => {
-    if (typeof window !== 'undefined') {
-      try {
-        const stored = localStorage.getItem('fobign_user_session');
-        if (stored) {
-          const parsed = JSON.parse(stored);
-          if (parsed && typeof parsed === 'object' && parsed.id) {
-            return {
-              id: parsed.id,
-              email: parsed.email || 'user@fobign.com',
-              name: parsed.name || 'Developer',
-              balance: parsed.balance ?? parsed.balance_usd ?? 0,
-              currency: parsed.currency || 'USD',
-              balance_usd: parsed.balance_usd ?? parsed.balance ?? 0,
-              balance_bdt: parsed.balance_bdt ?? ((parsed.balance_usd || 0) * 122.5),
-              granted_usd: parsed.granted_usd ?? 0,
-            };
-          }
-        }
-      } catch {
-        // ignore
-      }
+    const stored = readUserSession();
+    if (stored) {
+      return {
+        id: stored.id,
+        email: stored.email || 'user@fobign.com',
+        name: stored.name || 'Developer',
+        balance: stored.balance ?? stored.balance_usd ?? 0,
+        currency: stored.currency || 'USD',
+        balance_usd: stored.balance_usd ?? stored.balance ?? 0,
+        balance_bdt: stored.balance_bdt ?? ((stored.balance_usd || 0) * 122.5),
+        granted_usd: stored.granted_usd ?? 0,
+      };
     }
     return null;
   });
@@ -77,29 +75,9 @@ export function UserProvider({ children }: { children: React.ReactNode }) {
         return;
       }
 
-      const stored = localStorage.getItem('fobign_user_session');
-      if (!stored) {
-        if (isMounted) {
-          setUser(null);
-          setIsLoading(false);
-        }
-        return;
-      }
-
-      let parsed: any = null;
-      try {
-        parsed = JSON.parse(stored);
-      } catch {
-        localStorage.removeItem('fobign_user_session');
-        if (isMounted) {
-          setUser(null);
-          setIsLoading(false);
-        }
-        return;
-      }
-
-      if (!parsed?.id) {
-        localStorage.removeItem('fobign_user_session');
+      // readUserSession enforces the 30-day expiry and stamps legacy sessions.
+      const parsed = readUserSession();
+      if (!parsed) {
         if (isMounted) {
           setUser(null);
           setIsLoading(false);
@@ -125,17 +103,27 @@ export function UserProvider({ children }: { children: React.ReactNode }) {
             };
             if (isMounted) {
               setUser(validUser);
-              localStorage.setItem('fobign_user_session', JSON.stringify(validUser));
+              // Successful check re-stamps the rolling 30-day expiry.
+              writeUserSession(validUser);
             }
             return;
           }
         }
 
-        localStorage.removeItem('fobign_user_session');
-        if (isMounted) {
-          setUser(null);
+        // Only a definitive rejection (404 = account gone, 403 = banned or
+        // suspended) may end the session. 5xx, rate limits and malformed
+        // responses keep the cached session — a flaky server must never sign
+        // the user out.
+        if (isDefinitiveRejection(res.status)) {
+          clearUserSession();
+          if (isMounted) {
+            setUser(null);
+          }
+        } else {
+          console.warn(`Session check returned ${res.status}; keeping cached session.`);
         }
       } catch (err) {
+        // Network failure — keep the cached session instead of logging out.
         console.error('Session validation error:', err);
       } finally {
         if (isMounted) setIsLoading(false);
@@ -165,13 +153,7 @@ export function UserProvider({ children }: { children: React.ReactNode }) {
             currency: (data.balance?.currency || prev.currency) as 'USD' | 'BDT',
             balance_bdt: (data.balance?.topped_up_balance ?? prev.balance_usd) * 122.5,
           };
-          if (typeof window !== 'undefined') {
-            try {
-              localStorage.setItem('fobign_user_session', JSON.stringify(updated));
-            } catch {
-              // ignore
-            }
-          }
+          patchUserSession({ ...updated });
           return updated;
         });
       }
@@ -181,9 +163,7 @@ export function UserProvider({ children }: { children: React.ReactNode }) {
   }, [user]);
 
   const logout = useCallback(() => {
-    if (typeof window !== 'undefined') {
-      localStorage.removeItem('fobign_user_session');
-    }
+    clearUserSession();
     setUser(null);
     if (typeof window !== 'undefined') {
       window.location.replace('/login');

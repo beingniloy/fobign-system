@@ -834,6 +834,65 @@ class DatabaseStore {
     return this.users.get(idOrEmail);
   }
 
+  /** Look a user up by their chosen username (login accepts email or username). */
+  getUserByUsername(username: string): User | undefined {
+    if (!username) return undefined;
+    const needle = username.toLowerCase();
+    for (const user of this.users.values()) {
+      if (user.username && user.username.toLowerCase() === needle) return user;
+    }
+    return undefined;
+  }
+
+  /**
+   * Update a user's profile fields (name / email / password_hash).
+   * Re-keys the in-memory map when the email changes so login by the old
+   * address stops resolving and the new one starts.
+   */
+  updateUserProfile(
+    userId: string,
+    patch: { name?: string; email?: string; username?: string; password_hash?: string }
+  ): User | undefined {
+    const user = this.users.get(userId);
+    if (!user) return undefined;
+
+    const previousEmail = user.email;
+
+    if (patch.name !== undefined) user.name = patch.name;
+    if (patch.username !== undefined) {
+      user.username = patch.username;
+      // Keep the login index in step so email-or-username lookup resolves.
+      if (patch.username) this.users.set(patch.username, user);
+    }
+    if (patch.email !== undefined && patch.email !== previousEmail) {
+      user.email = patch.email;
+      if (previousEmail) this.users.delete(previousEmail);
+      this.users.set(user.email, user);
+    }
+    if (patch.password_hash !== undefined) {
+      (user as any).password_hash = patch.password_hash;
+    }
+
+    this.persist();
+
+    if (supabaseAdmin) {
+      supabaseAdmin
+        .from('users')
+        .upsert({
+          id: user.id,
+          email: user.email,
+          name: user.name,
+          password_hash: (user as any).password_hash || null,
+          updated_at: new Date().toISOString(),
+        })
+        .then(({ error }) => {
+          if (error) console.error('[Supabase Sync Error - updateUserProfile]', error.message);
+        });
+    }
+
+    return user;
+  }
+
   getOrCreateUser(idOrEmail: string, email?: string, name?: string): User {
     let user = this.users.get(idOrEmail);
     if (!user) {

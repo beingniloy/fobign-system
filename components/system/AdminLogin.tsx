@@ -3,6 +3,7 @@
 import React, { useState } from 'react';
 import { Lock, Mail, AlertCircle, Loader2 } from 'lucide-react';
 import FobignLogo from '@/components/ui/FobignLogo';
+import { writeAdminSession } from '@/lib/adminSession';
 
 interface AdminLoginProps {
   onSuccess: (admin: any) => void;
@@ -28,7 +29,7 @@ export default function AdminLogin({ onSuccess }: AdminLoginProps) {
 
       const data = await res.json();
       if (res.ok && data.success) {
-        sessionStorage.setItem('fobign_admin_session', JSON.stringify(data.admin));
+        writeAdminSession(data.admin);
         onSuccess(data.admin);
       } else {
         setError(data.error || 'Invalid admin email or password.');

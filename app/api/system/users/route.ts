@@ -324,6 +324,20 @@ export async function PATCH(req: NextRequest) {
 
     if (body.name !== undefined) user.name = body.name;
     if (body.email !== undefined) user.email = body.email;
+    if (body.username !== undefined) {
+      const nextUsername = String(body.username).trim();
+      // Usernames are case-insensitive login handles; empty clears the field.
+      if (nextUsername) {
+        const clash = db.getUserByUsername(nextUsername);
+        if (clash && clash.id !== user.id) {
+          return NextResponse.json(
+            { error: `Username '${nextUsername}' is already taken.` },
+            { status: 409 }
+          );
+        }
+      }
+      user.username = nextUsername || undefined;
+    }
     if (body.role !== undefined) {
       user.role = (body.role === 'admin' || body.role === 'administrator') ? 'developer' : body.role;
     }

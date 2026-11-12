@@ -1,7 +1,7 @@
 'use client';
 
 import React, { useState, useEffect } from 'react';
-import { ChevronDown, ShieldCheck } from 'lucide-react';
+import { ChevronDown, ShieldCheck, Pencil, Check, X, Loader2, KeyRound, Eye, EyeOff } from 'lucide-react';
 import DevicesModal from './DevicesModal';
 import TwoFactorAuthModal from './TwoFactorAuthModal';
 import BoringAvatar from '@/components/ui/BoringAvatar';
@@ -17,14 +17,180 @@ interface ProfileViewProps {
     balance_bdt?: number;
   };
   onLogout: () => void;
+  /** Persists name/email edits. Omit to hide the edit affordances. */
+  onSaveProfile?: (patch: { name?: string; email?: string }) => Promise<void>;
+  /** Persists a new password. Omit to hide the password section. */
+  onSavePassword?: (newPassword: string) => Promise<void>;
 }
 
-export default function ProfileView({ user, onLogout }: ProfileViewProps) {
+const inputCls =
+  'w-full bg-[#101113] border border-[#2B2B2F] rounded-xl px-3 py-2 text-sm text-white focus:outline-none focus:border-white/50';
+
+/**
+ * Read-only value that swaps into an input on edit; the pencil turns into a
+ * tick while editing so the affordance never disappears mid-change.
+ */
+function EditableField({
+  label,
+  value,
+  type = 'text',
+  mono = false,
+  placeholder,
+  onSave,
+}: {
+  label: string;
+  value: string;
+  type?: string;
+  mono?: boolean;
+  placeholder?: string;
+  onSave: (next: string) => Promise<void>;
+}) {
+  const [editing, setEditing] = useState(false);
+  const [draft, setDraft] = useState(value);
+  const [saving, setSaving] = useState(false);
+  const [error, setError] = useState('');
+
+  useEffect(() => {
+    if (!editing) setDraft(value);
+  }, [value, editing]);
+
+  const cancel = () => {
+    setDraft(value);
+    setError('');
+    setEditing(false);
+  };
+
+  const commit = async () => {
+    const next = draft.trim();
+    if (!next) {
+      setError('Value cannot be empty.');
+      return;
+    }
+    if (next === value.trim()) {
+      setEditing(false);
+      setError('');
+      return;
+    }
+    setSaving(true);
+    setError('');
+    try {
+      await onSave(next);
+      setEditing(false);
+    } catch (err: any) {
+      setError(err?.message || 'Could not save. Please try again.');
+    } finally {
+      setSaving(false);
+    }
+  };
+
+  return (
+    <div className="space-y-1.5">
+      <label className="text-[#80858e] text-xs font-medium">{label}</label>
+      <div className="flex items-center gap-2">
+        {editing ? (
+          <>
+            <input
+              autoFocus
+              type={type}
+              value={draft}
+              placeholder={placeholder}
+              onChange={(e) => setDraft(e.target.value)}
+              onKeyDown={(e) => {
+                if (e.key === 'Enter') {
+                  e.preventDefault();
+                  commit();
+                }
+                if (e.key === 'Escape') cancel();
+              }}
+              className={`${inputCls} ${mono ? 'font-mono' : ''} flex-1`}
+            />
+            <button
+              type="button"
+              onClick={commit}
+              disabled={saving}
+              aria-label={`Save ${label}`}
+              className="p-2 rounded-xl bg-white text-black hover:bg-neutral-200 transition-colors disabled:opacity-50 cursor-pointer"
+            >
+              {saving ? <Loader2 className="w-3.5 h-3.5 animate-spin" /> : <Check className="w-3.5 h-3.5" />}
+            </button>
+            <button
+              type="button"
+              onClick={cancel}
+              disabled={saving}
+              aria-label={`Cancel ${label} edit`}
+              className="p-2 rounded-xl bg-[#202023] border border-[#2E2E32] text-[#80858e] hover:text-white transition-colors disabled:opacity-50 cursor-pointer"
+            >
+              <X className="w-3.5 h-3.5" />
+            </button>
+          </>
+        ) : (
+          <>
+            <span
+              className={`flex-1 text-sm text-white break-all ${
+                mono ? 'font-mono' : 'font-semibold'
+              }`}
+            >
+              {value}
+            </span>
+            <button
+              type="button"
+              onClick={() => {
+                setDraft(value);
+                setError('');
+                setEditing(true);
+              }}
+              aria-label={`Edit ${label}`}
+              className="p-2 rounded-xl bg-[#202023] border border-[#2E2E32] text-[#80858e] hover:text-white hover:border-white/30 transition-colors cursor-pointer"
+            >
+              <Pencil className="w-3.5 h-3.5" />
+            </button>
+          </>
+        )}
+      </div>
+      {error && <p className="text-[11px] text-rose-400">{error}</p>}
+    </div>
+  );
+}
+
+export default function ProfileView({ user, onLogout, onSaveProfile, onSavePassword }: ProfileViewProps) {
   const [showDevicesModal, setShowDevicesModal] = useState(false);
   const [show2FAModal, setShow2FAModal] = useState(false);
   const [is2FAEnabled, setIs2FAEnabled] = useState(false);
   const [language, setLanguage] = useState('System');
   const [theme, setTheme] = useState('Dark');
+
+  // Password change
+  const [newPassword, setNewPassword] = useState('');
+  const [confirmPassword, setConfirmPassword] = useState('');
+  const [showPassword, setShowPassword] = useState(false);
+  const [savingPassword, setSavingPassword] = useState(false);
+  const [passwordError, setPasswordError] = useState('');
+  const [passwordOk, setPasswordOk] = useState(false);
+
+  const handleSavePassword = async () => {
+    setPasswordError('');
+    setPasswordOk(false);
+    if (newPassword.length < 6) {
+      setPasswordError('Password must be at least 6 characters.');
+      return;
+    }
+    if (newPassword !== confirmPassword) {
+      setPasswordError('Passwords do not match.');
+      return;
+    }
+    if (!onSavePassword) return;
+    setSavingPassword(true);
+    try {
+      await onSavePassword(newPassword);
+      setNewPassword('');
+      setConfirmPassword('');
+      setPasswordOk(true);
+    } catch (err: any) {
+      setPasswordError(err?.message || 'Could not update password.');
+    } finally {
+      setSavingPassword(false);
+    }
+  };
 
   const applyThemeClass = (selectedTheme: string) => {
     if (typeof document === 'undefined') return;
@@ -96,18 +262,36 @@ export default function ProfileView({ user, onLogout }: ProfileViewProps) {
       {/* Fields */}
       <div className="space-y-5 text-xs">
         {/* Name */}
-        <div className="space-y-1.5">
-          <label className="text-[#80858e] text-xs font-medium">Name</label>
-          <div className="flex items-center gap-2">
-            <span className="text-sm font-semibold text-white">{user.name}</span>
+        {onSaveProfile ? (
+          <EditableField
+            label="Name"
+            value={user.name}
+            onSave={(next) => onSaveProfile({ name: next })}
+          />
+        ) : (
+          <div className="space-y-1.5">
+            <label className="text-[#80858e] text-xs font-medium">Name</label>
+            <div className="flex items-center gap-2">
+              <span className="text-sm font-semibold text-white">{user.name}</span>
+            </div>
           </div>
-        </div>
+        )}
 
         {/* Email */}
-        <div className="space-y-1.5">
-          <label className="text-[#80858e] text-xs font-medium">Email address</label>
-          <div className="text-sm font-mono text-white">{getMaskedEmail(user.email)}</div>
-        </div>
+        {onSaveProfile ? (
+          <EditableField
+            label="Email address"
+            value={user.email}
+            type="email"
+            mono
+            onSave={(next) => onSaveProfile({ email: next })}
+          />
+        ) : (
+          <div className="space-y-1.5">
+            <label className="text-[#80858e] text-xs font-medium">Email address</label>
+            <div className="text-sm font-mono text-white">{getMaskedEmail(user.email)}</div>
+          </div>
+        )}
 
         {/* Language Dropdown */}
         <div className="space-y-1.5">
@@ -145,6 +329,78 @@ export default function ProfileView({ user, onLogout }: ProfileViewProps) {
           </div>
         </div>
       </div>
+
+      {/* Password */}
+      {onSavePassword && (
+        <div className="space-y-2 pt-2 border-t border-[#2A2A2E]">
+          <label className="text-[#80858e] text-xs font-medium">Password</label>
+          <div className="bg-[#1B1B1C] border border-[#2E2E32] rounded-2xl p-4 space-y-3">
+            <div className="flex items-center gap-3">
+              <div className="p-2 rounded-xl bg-white/5 text-white border border-[#2E2E32] shrink-0">
+                <KeyRound className="w-5 h-5" />
+              </div>
+              <div>
+                <div className="text-xs font-bold text-white">Change password</div>
+                <div className="text-[11px] text-[#80858e]">
+                  Use at least 6 characters. You stay signed in after changing it.
+                </div>
+              </div>
+            </div>
+
+            <div className="grid grid-cols-1 sm:grid-cols-2 gap-2">
+              <div className="relative">
+                <input
+                  type={showPassword ? 'text' : 'password'}
+                  value={newPassword}
+                  onChange={(e) => {
+                    setNewPassword(e.target.value);
+                    setPasswordOk(false);
+                  }}
+                  placeholder="New password"
+                  className={`${inputCls} pr-9`}
+                />
+                <button
+                  type="button"
+                  onClick={() => setShowPassword(!showPassword)}
+                  aria-label={showPassword ? 'Hide password' : 'Show password'}
+                  className="absolute right-2.5 top-2.5 text-[#80858e] hover:text-white cursor-pointer"
+                >
+                  {showPassword ? <EyeOff className="w-3.5 h-3.5" /> : <Eye className="w-3.5 h-3.5" />}
+                </button>
+              </div>
+              <input
+                type={showPassword ? 'text' : 'password'}
+                value={confirmPassword}
+                onChange={(e) => {
+                  setConfirmPassword(e.target.value);
+                  setPasswordOk(false);
+                }}
+                onKeyDown={(e) => {
+                  if (e.key === 'Enter') handleSavePassword();
+                }}
+                placeholder="Confirm password"
+                className={inputCls}
+              />
+            </div>
+
+            {(passwordError || passwordOk) && (
+              <p className={`text-[11px] ${passwordError ? 'text-rose-400' : 'text-emerald-400'}`}>
+                {passwordError || 'Password updated successfully.'}
+              </p>
+            )}
+
+            <button
+              type="button"
+              onClick={handleSavePassword}
+              disabled={savingPassword || !newPassword || !confirmPassword}
+              className="px-4 py-2 rounded-xl bg-white hover:bg-neutral-200 text-black text-xs font-semibold flex items-center gap-1.5 transition-colors disabled:opacity-50 cursor-pointer"
+            >
+              {savingPassword ? <Loader2 className="w-3.5 h-3.5 animate-spin" /> : <KeyRound className="w-3.5 h-3.5" />}
+              <span>{savingPassword ? 'Updating...' : 'Update password'}</span>
+            </button>
+          </div>
+        </div>
+      )}
 
       {/* 2FA Two-Factor Authentication Section */}
       <div className="space-y-2 pt-2 border-t border-[#2A2A2E]">

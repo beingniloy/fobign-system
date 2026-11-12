@@ -4,6 +4,7 @@ import React, { useState, useEffect } from 'react';
 import { Menu } from 'lucide-react';
 import AppSidebar from '@/components/shared/AppSidebar';
 import AdminLogin from '@/components/system/AdminLogin';
+import { readAdminSession, clearAdminSession } from '@/lib/adminSession';
 
 export default function AdminShell({ children }: { children: React.ReactNode }) {
   const [adminSession, setAdminSession] = useState<{ email: string; role: string } | null>(null);
@@ -15,9 +16,10 @@ export default function AdminShell({ children }: { children: React.ReactNode }) 
     Promise.resolve().then(() => {
       if (!isMounted) return;
       try {
-        const stored = sessionStorage.getItem('fobign_admin_session');
-        if (stored) {
-          setAdminSession(JSON.parse(stored));
+        // localStorage + 30-day expiry, so closing the browser keeps you in.
+        const session = readAdminSession();
+        if (session) {
+          setAdminSession(session);
         }
       } catch (err) {
         console.error(err);
@@ -32,7 +34,7 @@ export default function AdminShell({ children }: { children: React.ReactNode }) 
   }, []);
 
   const handleLogout = () => {
-    sessionStorage.removeItem('fobign_admin_session');
+    clearAdminSession();
     setAdminSession(null);
   };
 

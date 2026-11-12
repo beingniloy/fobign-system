@@ -4,6 +4,7 @@ export interface User {
   id: string;
   email: string;
   name: string;
+  username?: string;
   password_hash?: string;
   avatar_url?: string;
   balance: number; // single unified balance across all apps (platform, chat, api)
@@ -28,6 +29,8 @@ export interface AdminUser {
   id: string;
   email: string;
   name?: string;
+  /** scrypt hash (or legacy `plain:` value) — see lib/adminPassword.ts */
+  password_hash?: string;
   role: 'superadmin' | 'admin' | 'support_agent' | 'billing_manager' | 'viewer';
   created_at: string;
 }
